@@ -9,7 +9,7 @@
 #include "prf.h"
 
 /* turn this on to print more stuff. */
-#define VDEBUG 0
+#define VDEBUG 1
 /* turn this on for randomized tests. */
 #define RANDKEY 0
 

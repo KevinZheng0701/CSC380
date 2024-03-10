@@ -64,7 +64,7 @@ size_t ske_encrypt(unsigned char *outBuf, unsigned char *inBuf, size_t len,
 	// generate random IV if none is given
 	if (IV == NULL)
 		randBytes(IV, 16);
-	// encrypt the plaintext and get the ciphertext
+	// encrypt the plaintext using aeskey and get the ciphertext
 	EVP_CIPHER_CTX *ciphertext = EVP_CIPHER_CTX_new();
 	EVP_EncryptInit_ex(ciphertext, EVP_aes_256_ctr(), 0, K->aesKey, IV);
 	int bytesWritten;
@@ -73,10 +73,21 @@ size_t ske_encrypt(unsigned char *outBuf, unsigned char *inBuf, size_t len,
 	// Set up the concanentation of IV and ciphertext
 	unsigned int HMACLength = 32;
 	unsigned char *IVC = malloc(16 + bytesWritten);
+	if (IVC == NULL)
+	{
+		perror("Failed to allocate space for buffer");
+		return 0;
+	}
 	memcpy(IVC, IV, 16);
 	memcpy(IVC + 16, outBuf, bytesWritten);
 	// Do HMAC(IV|C)
 	unsigned char *hmac = malloc(HMACLength);
+	if (hmac == NULL)
+	{
+		perror("Failed to allocate space for buffer");
+		free(IVC);
+		return 0;
+	}
 	HMAC(EVP_sha256(), K->hmacKey, HMACLength, IVC, 16 + bytesWritten, hmac, NULL);
 	// Form the ciphertext from the three components, IV, C, and HMAC(IV|C) and write to buffer
 	size_t ciphertextLength = bytesWritten + HMACLength + 16;
@@ -92,7 +103,74 @@ size_t ske_encrypt_file(const char *fnout, const char *fnin,
 						SKE_KEY *K, unsigned char *IV, size_t offset_out)
 {
 	/* TODO: write this.  Hint: mmap. */
-	return 0;
+	// open the input file
+	int inputFile = open(fnin, O_RDONLY);
+	if (inputFile == -1)
+	{
+		perror("Failed to open input file");
+		return 0;
+	}
+	// get the size of the file
+	struct stat st;
+	if (fstat(inputFile, &st) == -1)
+	{
+		perror("Failed to get file stat");
+		close(inputFile);
+		return 0;
+	}
+	size_t inputSize = st.st_size;
+	// map the file into the buffer
+	unsigned char *inputData = mmap(NULL, inputSize, PROT_READ, MAP_PRIVATE, inputFile, 0);
+	if (inputData == MAP_FAILED)
+	{
+		perror("Failed mapping from inputfile into memory");
+		close(inputFile);
+		return 0;
+	}
+	// close the input file since it is no longer needed
+	close(inputFile);
+	// open the output file with write access
+	int outputFile = open(fnout, O_RDWR | S_IRUSR | S_IWUSR);
+	if (outputFile == -1)
+	{
+		perror("Failed to open output file");
+		munmap(inputData, inputSize);
+		return 0;
+	}
+	// truncate the file if offset is 0
+	if (offset_out == 0 && ftruncate(outputFile, 0) == -1)
+	{
+		perror("Failed to truncate output file");
+		munmap(inputData, inputSize);
+		close(outputFile);
+		return 0;
+	}
+	// allocate memory for output buffer
+	size_t outputSize = ske_getOutputLen(inputSize);
+	unsigned char *outputData = malloc(outputSize);
+	if (outputData == NULL)
+	{
+		perror("Failed to create output buffer");
+		munmap(inputData, inputSize);
+		close(outputFile);
+		return 0;
+	}
+	// encrypt the input data and store into output data
+	size_t ciphertextLength = ske_encrypt(outputData, inputData, inputSize, K, IV);
+	// write the output buffer to output file
+	if (pwrite(outputFile, outputData, ciphertextLength, offset_out) == -1)
+	{
+		perror("Failed to write data to output file");
+		free(outputData);
+		close(outputFile);
+		munmap(inputData, inputSize);
+		return 0;
+	}
+	// release memory
+	munmap(inputData, inputSize);
+	close(outputFile);
+	free(outputData);
+	return ciphertextLength;
 }
 size_t ske_decrypt(unsigned char *outBuf, unsigned char *inBuf, size_t len,
 				   SKE_KEY *K)
@@ -113,6 +191,11 @@ size_t ske_decrypt(unsigned char *outBuf, unsigned char *inBuf, size_t len,
 	memcpy(hmac, inBuf + ciphertextLength + 16, 32);
 	// check if the mac is valid
 	unsigned char *checkhmac = malloc(32);
+	if (checkhmac == NULL)
+	{
+		perror("Failed to allocate space");
+		return 0;
+	}
 	unsigned char IVC[len - 32];
 	memcpy(IVC, inBuf, len - 32);
 	HMAC(EVP_sha256(), K->hmacKey, 32, IVC, len - 32, checkhmac, NULL);
@@ -135,5 +218,63 @@ size_t ske_decrypt_file(const char *fnout, const char *fnin,
 						SKE_KEY *K, size_t offset_in)
 {
 	/* TODO: write this. */
-	return 0;
+	int inputFile = open(fnin, O_RDONLY);
+	if (inputFile == -1)
+	{
+		perror("Failed to open input file");
+		return 0;
+	}
+	// get the size of the file
+	struct stat st;
+	if (fstat(inputFile, &st) == -1)
+	{
+		perror("Failed to get file stat");
+		close(inputFile);
+		return 0;
+	}
+	size_t inputSize = st.st_size;
+	// map the file into the buffer
+	unsigned char *inputData = mmap(NULL, inputSize, PROT_READ, MAP_PRIVATE, inputFile, offset_in);
+	if (inputData == MAP_FAILED)
+	{
+		perror("Failed mapping from inputfile into memory");
+		close(inputFile);
+		return 0;
+	}
+	// close the input file since it is no longer needed
+	close(inputFile);
+	// open the output file with write access
+	int outputFile = open(fnout, O_WRONLY | O_TRUNC | S_IRUSR | S_IWUSR);
+	if (outputFile == -1)
+	{
+		perror("Failed to open output file");
+		munmap(inputData, inputSize);
+		return 0;
+	}
+	// allocate memory for output buffer
+	size_t outputSize = inputSize;
+	unsigned char *outputData = malloc(outputSize);
+	if (outputData == NULL)
+	{
+		perror("Failed to create output buffer");
+		munmap(inputData, inputSize);
+		close(outputFile);
+		return 0;
+	}
+	// encrypt the input data and store into output data
+	size_t bytesWritten = ske_decrypt(outputData, inputData, inputSize, K);
+	// write the output buffer to output file
+	if (write(outputFile, outputData, bytesWritten) == -1)
+	{
+		perror("Failed to write data to output file");
+		munmap(inputData, inputSize);
+		close(outputFile);
+		free(outputData);
+		return 0;
+	}
+	// release memory
+	munmap(inputData, inputSize);
+	close(outputFile);
+	free(outputData);
+	return bytesWritten;
 }
