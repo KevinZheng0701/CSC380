@@ -4,8 +4,8 @@
 
 # first the basic rsa and ske tests:
 
-./tests/rsa-test &> output
-./tests/ske-test &>> output
+./tests/rsa-test > output
+./tests/ske-test >> output
 
 # set up some test files:
 mkdir -p ./tests/data

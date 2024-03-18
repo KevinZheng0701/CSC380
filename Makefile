@@ -6,9 +6,9 @@ TSOURCE := $(wildcard tests/*.c)
 TESTS   := $(TSOURCE:.c=)
 
 COMMON   := -O2 -Wall
-CFLAGS   := $(CFLAGS) $(COMMON)
+CFLAGS   := $(CFLAGS) $(COMMON) -I/opt/homebrew/Cellar/gmp/6.3.0/include -I/opt/homebrew/opt/openssl@3/include
 CC       := gcc
-LDADD    := -lcrypto -lssl -lgmp
+LDADD    := -L$(shell pkg-config --variable=libdir openssl) -lssl -lcrypto -lgmp -L/opt/homebrew/Cellar/gmp/6.3.0/lib -L/opt/homebrew/opt/openssl@3/lib
 LD       := $(CC)
 LDFLAGS  := # -L/usr/local/lib/
 DEFS     :=
