@@ -55,36 +55,18 @@ enum modes
 
 int kem_encrypt(const char *fnOut, const char *fnIn, RSA_KEY *K)
 {
-	printf("Starting kem_encrypt...\n");
-
 	// Length of RSA key
 	size_t RSALength = rsa_numBytesN(K);
-	printf("RSA key length: %zu\n", RSALength);
-
 	unsigned char *x = malloc(RSALength);
 	if (x == NULL)
 	{
 		perror("Failed to allocate space for x");
 		return 0;
 	}
-	printf("Allocated memory for x\n");
-
 	// Generate the symmetric key
 	randBytes(x, RSALength);
-	printf("Generated random bytes for x: ");
-	for (size_t i = 0; i < RSALength; ++i)
-	{
-		printf("%02x", x[i]);
-	}
-	printf("\n");
-
 	SKE_KEY SK;
-	ske_keyGen(&SK, x, RSALength);
-	printf("Generated SKE_KEY\n");
-
 	size_t EncapLength = RSALength + HASHLEN;
-	printf("Encapsulation length: %zu\n", EncapLength);
-
 	unsigned char *Encapsulation = malloc(EncapLength);
 	if (Encapsulation == NULL)
 	{
@@ -92,8 +74,6 @@ int kem_encrypt(const char *fnOut, const char *fnIn, RSA_KEY *K)
 		free(x);
 		return 0;
 	}
-	printf("Allocated memory for Encapsulation\n");
-
 	// Encrypt using RSA
 	if (RSALength != rsa_encrypt(Encapsulation, x, RSALength, K))
 	{
@@ -102,8 +82,6 @@ int kem_encrypt(const char *fnOut, const char *fnIn, RSA_KEY *K)
 		free(x);
 		return 0;
 	}
-	printf("Encrypted RSA(X)\n");
-
 	unsigned char *h = malloc(HASHLEN);
 	if (h == NULL)
 	{
@@ -112,15 +90,9 @@ int kem_encrypt(const char *fnOut, const char *fnIn, RSA_KEY *K)
 		free(Encapsulation);
 		return 0;
 	}
-	printf("Allocated memory for h\n");
-
 	// Hash x
 	SHA256(x, RSALength, h);
-	printf("Hashed x\n");
-
 	memcpy(Encapsulation + RSALength, h, HASHLEN);
-	printf("Computed RSA(X)|H(X)\n");
-
 	int outputFile = open(fnOut, O_CREAT | O_RDWR, 0666);
 	if (outputFile == -1)
 	{
@@ -130,8 +102,6 @@ int kem_encrypt(const char *fnOut, const char *fnIn, RSA_KEY *K)
 		free(Encapsulation);
 		return 0;
 	}
-	printf("Opened output file\n");
-
 	ssize_t bytesWritten = write(outputFile, Encapsulation, EncapLength);
 	if (bytesWritten != EncapLength)
 	{
@@ -142,18 +112,11 @@ int kem_encrypt(const char *fnOut, const char *fnIn, RSA_KEY *K)
 		free(Encapsulation);
 		return 0;
 	}
-	printf("Wrote encapsulation to output file\n");
-
 	close(outputFile);
-
 	ske_encrypt_file(fnOut, fnIn, &SK, NULL, EncapLength);
-	printf("Encrypted plaintext using SKE encryption\n");
-
 	free(h);
 	free(x);
 	free(Encapsulation);
-	printf("Released memory\n");
-
 	return 0;
 }
 
@@ -241,24 +204,25 @@ int kem_decrypt(const char *fnOut, const char *fnIn, RSA_KEY *K)
 	free(h);
 	return 0;
 }
+
 // Generation mode
-int generateKeys(const char *fnOut, size_t nBits)
+int generateKeys(const char *fnKey, size_t nBits)
 {
 	RSA_KEY K;
-	char *fPub = malloc(strlen(fnOut) + 5);
-	strcpy(fPub, fnOut);
-	strcat(fPub, ".pub");
-	FILE *Public = fopen(fPub, "w");
-	FILE *Private = fopen(fnOut, "w");
+	char *keyFile = malloc(strlen(fnKey) + 4);
+	strcpy(keyFile, fnKey);
+	strcat(keyFile, ".pub");
+	FILE *fnPri = fopen(fnKey, "w");
+	FILE *fnPub = fopen(keyFile, "w");
 	rsa_keyGen(nBits, &K);
-	rsa_writePrivate(Private, &K);
-	rsa_writePublic(Public, &K);
-	fclose(Public);
-	fclose(Private);
+	rsa_writePrivate(fnPri, &K);
+	rsa_writePublic(fnPub, &K);
+	fclose(fnPri);
+	fclose(fnPub);
 	rsa_shredKey(&K);
-	free(fPub);
 	return 0;
 }
+
 // Encrypt mode
 int encryptData(const char *fnOut, const char *fnIn, const char *fnKey)
 {
@@ -347,7 +311,7 @@ int main(int argc, char *argv[])
 			break;
 		case 'g':
 			mode = GEN;
-			strncpy(fnOut, optarg, FNLEN);
+			strncpy(fnKey, optarg, FNLEN);
 			break;
 		case 'b':
 			nBits = atol(optarg);
@@ -370,7 +334,7 @@ int main(int argc, char *argv[])
 		decryptData(fnOut, fnIn, fnKey);
 		break;
 	case GEN:
-		generateKeys(fnOut, nBits);
+		generateKeys(fnKey, nBits);
 		break;
 	default:
 		return 1;
@@ -378,5 +342,4 @@ int main(int argc, char *argv[])
 
 	return 0;
 }
-
-// kem gcc -o kem-enc kem-enc.c ske.c rsa.c prf.c -I/opt/homebrew/Cellar/gmp/6.3.0/include -L/opt/homebrew/Cellar/gmp/6.3.0/lib -lgmp -I/opt/homebrew/opt/openssl@3/include -L/opt/homebrew/opt/openssl@3/lib -lssl -lcrypto
+// gcc -o ./kem-enc ./kem-enc.c rsa.c prf.c ske.c -I/opt/homebrew/Cellar/gmp/6.3.0/include -I/opt/homebrew/opt/openssl@3/include -lssl -lcrypto -lgmp -L/opt/homebrew/Cellar/gmp/6.3.0/lib -L/opt/homebrew/opt/openssl@3/lib

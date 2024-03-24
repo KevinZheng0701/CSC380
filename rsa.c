@@ -99,7 +99,16 @@ int rsa_keyGen(size_t keyBits, RSA_KEY *K)
 	mpz_mul(totient, pminus1, qminus1);
 	// Generate e where GCD(e, (p-1)*(q-1)) = 1, one commonly used one is 65537
 	NEWZ(e);
-	mpz_set_ui(e, 65537);
+	NEWZ(gcd);
+	NEWZ(one);
+	mpz_set_ui(one, 1);
+	do
+	{
+		randBytes(buf, len);
+		BYTES2Z(e, buf, len);
+		mpz_gcd(gcd, e, totient);
+	} while (mpz_cmp_ui(gcd, 1) != 0);
+
 	// Generate the private d key
 	NEWZ(d);
 	mpz_invert(d, e, totient);
@@ -118,6 +127,8 @@ int rsa_keyGen(size_t keyBits, RSA_KEY *K)
 	mpz_clear(pminus1);
 	mpz_clear(qminus1);
 	mpz_clear(totient);
+	mpz_clear(gcd);
+	mpz_clear(one);
 	free(buf);
 	return 0;
 }
