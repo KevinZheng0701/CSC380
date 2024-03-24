@@ -183,7 +183,7 @@ size_t ske_encrypt_file(const char *fnout, const char *fnin,
 	// Encrypt the input data and store into output data
 	size_t ciphertextLength = ske_encrypt(outputData, inputData, st.st_size, K, IV);
 	// Open the output file with write access
-	int outputFile = open(fnout, O_RDWR | O_CREAT, 0666);
+	int outputFile = open(fnout, O_RDWR | O_CREAT | O_TRUNC, 0666);
 	if (outputFile == -1)
 	{
 		perror("Failed to open output file");
@@ -230,7 +230,7 @@ size_t ske_decrypt_file(const char *fnout, const char *fnin,
 		return 0;
 	}
 	// Map the file into the buffer
-	unsigned char *inputData = mmap(NULL, st.st_size - offset_in, PROT_READ, MAP_PRIVATE, inputFile, offset_in);
+	unsigned char *inputData = mmap(NULL, st.st_size - offset_in, PROT_READ, MAP_PRIVATE, inputFile, 0);
 	if (inputData == MAP_FAILED)
 	{
 		perror("Failed mapping from input file into memory");
@@ -239,7 +239,7 @@ size_t ske_decrypt_file(const char *fnout, const char *fnin,
 	}
 	close(inputFile);
 	// Open the output file with write access
-	int outputFile = open(fnout, O_RDWR | O_CREAT, 0666);
+	int outputFile = open(fnout, O_RDWR | O_CREAT | O_TRUNC, 0666);
 	if (outputFile == -1)
 	{
 		perror("Failed to open output file");
@@ -247,7 +247,7 @@ size_t ske_decrypt_file(const char *fnout, const char *fnin,
 		return 0;
 	}
 	// Allocate memory for output buffer
-	size_t outputSize = st.st_size - HM_LEN - offset_in - 16;
+	size_t outputSize = st.st_size - offset_in - HM_LEN - AES_BLOCK_SIZE;
 	unsigned char *outputData = malloc(outputSize);
 	if (outputData == NULL)
 	{
@@ -257,7 +257,7 @@ size_t ske_decrypt_file(const char *fnout, const char *fnin,
 		return 0;
 	}
 	// Decrypt the input data and store into output data
-	size_t bytesWritten = ske_decrypt(outputData, inputData, st.st_size - offset_in, K);
+	size_t bytesWritten = ske_decrypt(outputData, inputData + offset_in, st.st_size - offset_in, K);
 	// Write the output buffer to output file
 	if (write(outputFile, outputData, bytesWritten) == -1)
 	{
